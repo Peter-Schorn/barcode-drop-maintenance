@@ -2,88 +2,47 @@ import Foundation
 import AWSLambdaRuntime
 import AWSLambdaEvents
 import MongoKitten
+import Logging
 
-// @main
-struct LambdaHandler: SimpleLambdaHandler {
+@main
+struct BarcodeDropLambdaHandler: LambdaHandler {
     
+    typealias Input = ByteBuffer
+    typealias Output = Void
+
     /*
      Environment Variables:
         - BARCODE_DROP_DATABASE_PASSWORD:
             - The password for the MongoDB database.
      */
 
-    // static let client: MongoDatabase = {
-    //
-    //     print("Initializing MongoDB client with lazy connection.")
-    //
-    //     guard let password = ProcessInfo.processInfo
-    //             .environment["BARCODE_DROP_DATABASE_PASSWORD"] else {
-    //         fatalError(
-    //             """
-    //             could not retrieve password from BARCODE_DROP_DATABASE_PASSWORD \
-    //             environment variable
-    //             """
-    //         )
-    //     }
-    //
-    //     print(
-    //         """
-    //         Retrieved BARCODE_DROP_DATABASE_PASSWORD from the environment \
-    //         variables.
-    //         """
-    //     )
-    //
-    //     let connectionURI = """
-    //         mongodb+srv://peter:\(password)@barcode-drop.w0gnolp.mongodb.net/Barcodes
-    //         """
-    //
-    //
-    //     do {
-    //
-    //         let x = try await MongoDatabase.connect(to: connectionURI)
-    //
-    //         let database = try MongoDatabase.lazyConnect(to: connectionURI)
-    //         // the connection may still fail even after this method returns
-    //         // because it lazily connects when the first operation is executed
-    //         print(
-    //             "Successfully Lazy-Connected to MongoDB 'Barcodes' database."
-    //         )
-    //         return database
-    //     } catch let connectError {
-    //         fatalError(
-    //             """
-    //             Error connecting to MongoDB (MongoDatabase.lazyConnect): \
-    //             \(connectError)
-    //             """
-    //         )
-    //     }
-    //
-    // }()
+    static let defaultLogger = Logger(label: "BarcodeDropLambdaHandler")
 
-    private static var _mongoDatabase: MongoDatabase? = nil
+    private let mongoDatabase: MongoDatabase
+    let logger: Logger
 
-    /// Initializes a connection to the MongoDB database, or returns an existing
-    /// connection if one already exists.
-    private static func initializeMongoDB() async throws -> MongoDatabase {
+    /// Initializes a connection to the MongoDB database
+    private static func initializeMongoDB(
+        logger: Logger? = nil
+    ) async throws -> MongoDatabase {
 
-        if let database = _mongoDatabase {
-            print("Returning existing MongoDB database connection.")
-            return database
-        }
+        let logger = logger ?? Self.defaultLogger
 
-        print("Initializing MongoDB database connection...")
+        logger.info("Initializing MongoDB database connection...")
 
         guard let password = ProcessInfo.processInfo
                 .environment["BARCODE_DROP_DATABASE_PASSWORD"] else {
-            fatalError(
+            
+            let errorMessage = """
+                could not retrieve password from \
+                BARCODE_DROP_DATABASE_PASSWORD environment variable
                 """
-                could not retrieve password from BARCODE_DROP_DATABASE_PASSWORD \
-                environment variable
-                """
-            )
+            logger.critical("\(errorMessage)")
+            fatalError(errorMessage)
+
         }
 
-        print(
+        logger.info(
             """
             Retrieved BARCODE_DROP_DATABASE_PASSWORD from the environment \
             variables.
@@ -101,53 +60,63 @@ struct LambdaHandler: SimpleLambdaHandler {
                 to: connectionURI
             )
 
-            print(
+            logger.info(
                 "Successfully Connected to MongoDB 'Barcodes' database."
             )
-
-            self._mongoDatabase = database
 
             return database
 
         } catch let connectError {
-            fatalError(
-                """
+
+            let errorMessage = """
                 Error connecting to MongoDB (MongoDatabase.lazyConnect): \
                 \(connectError)
                 """
-            )
+            logger.critical("\(errorMessage)")
+            fatalError(errorMessage)
+
         }
 
     }
 
-    // In this example we are receiving a SQS Event, with no response (Void).
-    func handle(_ event: SQSEvent, context: LambdaContext) async throws {
+    init(context: LambdaInitializationContext) async throws {
+        self.logger = context.logger
+        self.mongoDatabase = try await Self.initializeMongoDB(
+            logger: self.logger
+        )
+    }
 
-        for record in event.records {
-            print("Received message: \(record.body)")
-        }
+    func handle(_ event: Input, context: LambdaContext) async throws {
+
+        let eventString = String(buffer: event)
+
+        self.logger.info(
+            """
+            LambdaHandler.handle(_:context:): Received event: \(eventString)
+            """
+        )
+
+        try await self.runMaintenance()
 
     }
 
     /// The entry point for the work that performs all the maintenance tasks
     /// in this lambda.
     func runMaintenance() async throws {
-        print("Running maintenance tasks...")
+        self.logger.info("Running maintenance tasks...")
 
-        let database = try await Self.initializeMongoDB()
-
-        let barcodesCollection = database["barcodes"]
+        let barcodesCollection = self.mongoDatabase["barcodes"]
 
         // let olderThanDuration = 300  // 5 minutes
         let olderThanDuration = 1_800  // 30 minutes
         
-        print("olderThanDuration: \(olderThanDuration)")
+        self.logger.info("olderThanDuration: \(olderThanDuration)")
 
         let currentDate = Date()
         let oldDate = currentDate.addingTimeInterval(
             TimeInterval(-olderThanDuration)
         )
-        print(
+        self.logger.info(
             """
             Deleting all scans that are older than \(oldDate) \
             (current date: \(currentDate)).
@@ -158,25 +127,23 @@ struct LambdaHandler: SimpleLambdaHandler {
             where: "date" < oldDate
         )
 
-        print(
+        self.logger.info(
             """
             delete result for scans older than \(oldDate): \(deleteResult)
             """
         )
 
-        print("Maintenance tasks completed.")
+        self.logger.info("Maintenance tasks completed.")
 
     }
 
-
 }
 
-@main
-struct Main {
-    static func main() async throws {
-        print("Testing LambdaHandler: `runMaintenance()`")
-        let handler = LambdaHandler()
-        try await handler.runMaintenance()
-
-    }
-}
+// @main
+// struct Main {
+//     static func main() async throws {
+//         print("Testing BarcodeDropLambdaHandler: `runMaintenance()`")
+//         let handler = BarcodeDropLambdaHandler()
+//         try await handler.runMaintenance()
+//     }
+// }

@@ -26,6 +26,10 @@ let package = Package(
         .package(
             url: "https://github.com/orlandos-nl/MongoKitten.git", 
             from: "7.2.0"
+        ),
+        .package(
+            url: "https://github.com/apple/swift-log.git",
+            from: "1.0.0"
         )
     ],
     targets: [
@@ -39,6 +43,10 @@ let package = Package(
                 .product(
                     name: "AWSLambdaEvents", 
                     package: "swift-aws-lambda-events"
+                ),
+                .product(
+                    name: "Logging",
+                    package: "swift-log"
                 ),
                 .product(
                     name: "MongoKitten",
