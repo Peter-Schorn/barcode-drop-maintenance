@@ -84,7 +84,11 @@ struct BarcodeDropLambdaHandler: LambdaHandler {
         self.mongoDatabase = try await Self.initializeMongoDB(
             logger: self.logger
         )
-    }
+    }   
+
+    func decode(buffer: ByteBuffer) throws -> ByteBuffer {
+        return buffer
+    }   
 
     func handle(_ event: Input, context: LambdaContext) async throws {
 
