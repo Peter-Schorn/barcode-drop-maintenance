@@ -112,7 +112,8 @@ struct BarcodeDropLambdaHandler: LambdaHandler {
         let barcodesCollection = self.mongoDatabase["barcodes"]
 
         // let olderThanDuration = 300  // 5 minutes
-        let olderThanDuration = 1_800  // 30 minutes
+        // let olderThanDuration = 1_800  // 30 minutes
+        let olderThanDuration = 3_600  // 1 hour
         
         self.logger.info("olderThanDuration: \(olderThanDuration)")
 
